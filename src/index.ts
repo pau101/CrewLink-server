@@ -50,17 +50,19 @@ io.on('connection', (socket: socketIO.Socket) => {
 			return;
 		}
 		code = c;
-		socket.leaveAll();
 		socket.join(code);
+		playerIds.set(socket.id, id);
 		socket.to(code).broadcast.emit('join', socket.id, id);
-
+		logger.info('Join broadcast in room %s: %s %s', code, socket.id, id);
 		let socketsInLobby = Object.keys(io.sockets.adapter.rooms[code].sockets);
 		let ids: any = {};
 		for (let s of socketsInLobby) {
-			if (s !== socket.id)
+			if (s !== socket.id) {
 				ids[s] = playerIds.get(s);
+			}
 		}
 		socket.emit('setIds', ids);
+		logger.info('Join reply in room %s: %s %j', code, socket.id, ids);
 	});
 
 	socket.on('id', (id: number) => {
@@ -69,14 +71,23 @@ io.on('connection', (socket: socketIO.Socket) => {
 			logger.error('Socket %s sent invalid id command: %d', socket.id, id);
 			return;
 		}
-		playerIds.set(socket.id, id);
-		socket.to(code).broadcast.emit('setId', socket.id, id);
-	})
+		if (code) {
+			playerIds.set(socket.id, id);
+			socket.to(code).broadcast.emit('setId', socket.id, id);
+			logger.info('ID broadcast to room %s: %s %s', code, socket.id, id);
+		}
+	});
 
 
 	socket.on('leave', () => {
-		if (code) socket.leave(code);
-	})
+		if (!code) return;
+		const id = playerIds.get(socket.id);
+		if (!id) return;
+		socket.to(code).broadcast.emit('deleteId', socket.id);
+		socket.leave(code);
+		playerIds.delete(socket.id);
+		logger.info('Leave room %s: %s', code, socket.id);
+	});
 
 	socket.on('signal', (signal: Signal) => {
 		if (typeof signal !== 'object' || !signal.data || !signal.to || typeof signal.to !== 'string') {
@@ -91,13 +102,23 @@ io.on('connection', (socket: socketIO.Socket) => {
 		});
 	});
 
+	socket.on('disconnecting', () => {
+		const id = playerIds.get(socket.id);
+		if (!id) return;
+		for (const room of Object.keys(socket.rooms)) {
+			if (room !== socket.id) {
+				socket.to(room).broadcast.emit('deleteId', socket.id, id);
+			}
+		}
+	});
+
 	socket.on('disconnect', () => {
 		connectionCount--;
 		logger.info('Total connected: %d', connectionCount);
 		playerIds.delete(socket.id);
-	})
+	});
 
-})
+});
 
 server.listen(port);
 logger.info('Server listening on port %d', port);
