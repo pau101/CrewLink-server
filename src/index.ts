@@ -26,7 +26,7 @@ let connectionCount = 0;
 app.use(morgan('combined'));
 app.use(express.static('offsets'));
 app.use('/', (_, res) => {
-	const rooms = Object.keys(io.sockets.adapter.rooms).length;
+	const rooms = Object.keys(io.sockets.adapter.rooms).length - connectionCount;
 	res.status(200).send(`
 		<!doctype html>
 		<html>
