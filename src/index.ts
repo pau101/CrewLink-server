@@ -43,12 +43,23 @@ io.on('connection', (socket: socketIO.Socket) => {
 	logger.info("Total connected: %d", connectionCount);
 	let code: string | null = null;
 
+	function leave() {
+		if (!code) return;
+		const id = playerIds.get(socket.id);
+		if (typeof id !== 'number') return;
+		socket.to(code).broadcast.emit('deleteId', socket.id);
+		socket.leave(code);
+		logger.info('Leave room %s: %s', code, socket.id);
+		code = null;
+	}
+
 	socket.on('join', (c: string, id: number) => {
 		if (typeof c !== 'string' || typeof id !== 'number') {
 			socket.disconnect();
 			logger.error('Socket %s sent invalid join command: %s %d', socket.id, c, id);
 			return;
 		}
+		leave();
 		code = c;
 		socket.join(code);
 		playerIds.set(socket.id, id);
@@ -78,16 +89,7 @@ io.on('connection', (socket: socketIO.Socket) => {
 		}
 	});
 
-
-	socket.on('leave', () => {
-		if (!code) return;
-		const id = playerIds.get(socket.id);
-		if (!id) return;
-		socket.to(code).broadcast.emit('deleteId', socket.id);
-		socket.leave(code);
-		playerIds.delete(socket.id);
-		logger.info('Leave room %s: %s', code, socket.id);
-	});
+	socket.on('leave', () => leave());
 
 	socket.on('signal', (signal: Signal) => {
 		if (typeof signal !== 'object' || !signal.data || !signal.to || typeof signal.to !== 'string') {
@@ -104,7 +106,7 @@ io.on('connection', (socket: socketIO.Socket) => {
 
 	socket.on('disconnecting', () => {
 		const id = playerIds.get(socket.id);
-		if (!id) return;
+		if (typeof id !== 'number') return;
 		for (const room of Object.keys(socket.rooms)) {
 			if (room !== socket.id) {
 				socket.to(room).broadcast.emit('deleteId', socket.id, id);
